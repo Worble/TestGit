@@ -1,0 +1,127 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace NhsTechnicalTest
+{
+    public class CheckPostcode
+    {
+        Regex regEx;
+        StringBuilder failedCsv = new StringBuilder();
+        StringBuilder succeededCsv = new StringBuilder();
+
+        public delegate void ProgressUpdate(int value);
+        public event ProgressUpdate OnProgressUpdate;
+
+        public CheckPostcode()
+        {
+            this.regEx = new Regex(@"(GIR\s0AA)|((([A-PR-UWYZ][0-9][0-9]?)|(([A-PR-UWYZ][A-HK-Y][0-9](?<!(BR|FY|HA|HD|HG|HR|HS|HX|JE|LD|SM|SR|WC|WN|ZE)[0-9])[0-9])|([A-PR-UWYZ][A-HK-Y](?<!AB|LL|SO)[0-9])|(WC[0-9][A-Z])|(([A-PR-UWYZ][0-9][A-HJKPSTUW])|([A-PR-UWYZ][A-HK-Y][0-9][ABEHMNPRVWXY]))))\s[0-9][ABD-HJLNP-UW-Z]{2})");
+        }
+
+        public CheckPostcode(string regEx)
+        {
+            this.regEx = new Regex(regEx);
+        }
+
+        //From Csv file
+        public void checkPostCodeFromCsv(string csvDirectory, string outputDirectory)
+        {
+            Console.WriteLine("Reading File...");
+
+            //append top of file
+            failedCsv.Append("row_id,postcode\n");
+            succeededCsv.Append("row_id,postcode\n");
+
+            //read file
+            var reader = new StreamReader(File.OpenRead(csvDirectory));
+            SortedDictionary<int, string> dictionaryPostCodes = new SortedDictionary<int, string>();
+
+            //skip first line - this should be row_id,postcode
+            reader.ReadLine();
+            while (!reader.EndOfStream)
+            {
+                var line = reader.ReadLine();
+                var values = line.Split(',');
+                
+                dictionaryPostCodes.Add(Int32.Parse(values[0]), values[1]);
+            }
+            int maxEntry = dictionaryPostCodes.Count;
+            int currentEntry = 1;
+            //check each postcode for validation
+            foreach (KeyValuePair<int, string> entry in dictionaryPostCodes)
+            {
+                if (checkPostCodeAgainstRegularExpression(entry.Value))
+                {
+                    storeSucceededValidation(entry.Key, entry.Value);
+                }
+                else
+                {
+                    storeFailedValidation(entry.Key, entry.Value);
+                }
+                updateProgress(currentEntry, maxEntry);
+                currentEntry++;
+            }
+            writeAllCsv(outputDirectory);
+        }
+
+        private void updateProgress(double currentEntry, double maxEntry)
+        {
+            int i = (int)Math.Round((currentEntry/maxEntry) * 100);
+            if (OnProgressUpdate != null)
+            {
+                OnProgressUpdate(i);
+            }
+        }
+
+        public bool checkPostCodeAgainstRegularExpression(string postCode)
+        {
+            Match match = regEx.Match(postCode);
+
+            if (match.Groups[0].ToString() == postCode)
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        //append failed file in memory
+        private void storeFailedValidation(int key, string value)
+        {
+            var newLine = string.Format("{0},{1}\n", key, value);
+            failedCsv.Append(newLine);  
+        }
+
+        //append succeeded file in memory
+        private void storeSucceededValidation(int key, string value)
+        {
+            var newLine = string.Format("{0},{1}\n", key, value);
+            succeededCsv.Append(newLine);  
+        }
+
+        //Write both csv's once at the end to improve performance rather than doing them as they occur. Try/Catch in case permissions denied, write in working directory instead
+        private void writeAllCsv(string outputDirectory)
+        {
+            Console.WriteLine("Writing Csv...");
+            try
+            {
+                File.WriteAllText(outputDirectory + @"\failed_validation.csv", failedCsv.ToString());
+                File.WriteAllText(outputDirectory + @"\succeeded_validation.csv", succeededCsv.ToString());
+            }
+            catch (Exception e)
+            {
+                using (StreamWriter logWriter = new StreamWriter(AppDomain.CurrentDomain.BaseDirectory.ToString() + @"\log.txt", true))
+                {
+                    logWriter.WriteLine("{0}:", DateTime.Now);
+                    logWriter.WriteLine(e);
+                    File.WriteAllText(AppDomain.CurrentDomain.BaseDirectory.ToString() + @"\failed_validation.csv", failedCsv.ToString());
+                    File.WriteAllText(AppDomain.CurrentDomain.BaseDirectory.ToString() + @"\succeeded_validation.csv", succeededCsv.ToString());
+                }
+            }
+        }
+    }
+}
