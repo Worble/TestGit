@@ -8,6 +8,7 @@ namespace NhsTechnicalTest
 {
     public class CheckPostcode
     {
+    //this is a test
         Regex regEx;
         StringBuilder failedCsv = new StringBuilder();
         StringBuilder succeededCsv = new StringBuilder();
